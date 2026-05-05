@@ -71,14 +71,26 @@
     <div class="grid-container">
         <!-- Raw Data Chart -->
         <div class="card">
-            <h3 style="margin-top:0; color:#2c3e50;">Raw EEG Data (Latest 1s)</h3>
-            <div id="raw-chart" style="width:100%; height:350px;"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin-top:0; color:#2c3e50;">Time Series (5s)</h3>
+                <div>
+                    <label for="v-scale" style="font-weight:bold; margin-right:5px; font-size: 12px;">Vert Scale:</label>
+                    <select id="v-scale" style="padding:5px; border-radius:4px;">
+                        <option value="50">50 uV</option>
+                        <option value="100">100 uV</option>
+                        <option value="200" selected>200 uV</option>
+                        <option value="500">500 uV</option>
+                        <option value="1000">1000 uV</option>
+                    </select>
+                </div>
+            </div>
+            <div id="raw-chart" style="width:100%; height:650px;"></div>
         </div>
 
         <!-- FFT Spectrum Chart -->
         <div class="card">
             <h3 style="margin-top:0; color:#2c3e50;">FFT Spectrum (0-40 Hz)</h3>
-            <div id="fft-chart" style="width:100%; height:350px;"></div>
+            <div id="fft-chart" style="width:100%; height:650px;"></div>
         </div>
 
         <!-- Attention Metrics Bar Chart -->
@@ -114,15 +126,30 @@
         const tbody = document.querySelector('#metrics-table tbody');
 
         // Initialize Plotly Charts
+        let currentScale = 200;
+        
         const rawLayout = {
-            margin: { t: 10, b: 30, l: 40, r: 10 },
-            xaxis: { title: 'Samples' },
-            yaxis: { title: 'Amplitude (µV)' },
-            showlegend: true,
-            legend: { x: 1, y: 1 }
+            margin: { t: 30, b: 30, l: 30, r: 10 },
+            grid: { rows: 8, columns: 1, pattern: 'independent' },
+            showlegend: false,
+            annotations: []
+            // Programmatically update y-axis scales later
         };
+        // Add all 8 y-axes dynamically
+        for (let i = 1; i <= 8; i++) {
+            rawLayout[`yaxis${i === 1 ? '' : i}`] = { 
+                range: [-currentScale, currentScale],
+                zeroline: false,
+                title: { text: `Ch${i}`, font: {size: 10} }
+            };
+            rawLayout[`xaxis${i === 1 ? '' : i}`] = {
+                range: [-5, 0],
+                showticklabels: i === 8 // Only show x-axis labels on the bottom chart
+            };
+        }
+
         const fftLayout = {
-            margin: { t: 10, b: 30, l: 40, r: 10 },
+            margin: { t: 30, b: 30, l: 40, r: 10 },
             xaxis: { title: 'Frequency (Hz)' },
             yaxis: { title: 'Power', type: 'log' }, // Log scale for PSD is usually better
             showlegend: true,
@@ -165,18 +192,51 @@
             };
         }
 
+        document.getElementById('v-scale').addEventListener('change', (e) => {
+            currentScale = parseInt(e.target.value);
+            for (let i = 1; i <= 8; i++) {
+                rawLayout[`yaxis${i === 1 ? '' : i}`].range = [-currentScale, currentScale];
+            }
+            Plotly.relayout('raw-chart', rawLayout);
+        });
+
         function updateDashboard(data) {
             const channels = Object.keys(data.raw_data);
             
-            // 1. Update Raw Data
-            const rawTraces = channels.map(ch => ({
-                x: Array.from({length: data.raw_data[ch].length}, (_, i) => i),
-                y: data.raw_data[ch],
-                name: ch,
-                type: 'scatter',
-                mode: 'lines',
-                line: { width: 1 }
-            }));
+            // 1. Update Raw Data (Time Series Subplots)
+            const rawTraces = channels.map((ch, i) => {
+                const dataLen = data.raw_data[ch].length;
+                // Calculate time from -5s to 0s based on index (assuming 250Hz sampling rate)
+                const xValues = Array.from({length: dataLen}, (_, idx) => -(dataLen - 1 - idx) / 250);
+                
+                return {
+                    x: xValues,
+                    y: data.raw_data[ch],
+                    name: ch,
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { width: 1 },
+                    xaxis: 'x' + (i === 0 ? '' : (i + 1)),
+                    yaxis: 'y' + (i === 0 ? '' : (i + 1)),
+                };
+            });
+            
+            // Generate annotations for uVrms
+            rawLayout.annotations = channels.map((ch, i) => {
+                const rms = data.metrics[ch].rms || 0;
+                return {
+                    xref: 'x' + (i === 0 ? '' : (i + 1)),
+                    yref: 'y' + (i === 0 ? '' : (i + 1)) + ' domain',
+                    x: 0,
+                    y: 0.05, // Just slightly above the bottom of the subplot
+                    xanchor: 'right',
+                    yanchor: 'bottom',
+                    text: `${rms.toFixed(1)} uVrms`,
+                    showarrow: false,
+                    font: { color: '#f39c12', size: 11, weight: 'bold' } // orange/gold color similar to OpenBCI
+                };
+            });
+
             Plotly.react('raw-chart', rawTraces, rawLayout);
 
             // 2. Update FFT Data

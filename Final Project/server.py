@@ -106,7 +106,7 @@ async def websocket_dashboard(websocket: WebSocket):
             # Use get_recent_data instead of get_all_data so we don't steal
             # data from the main game loop's CSV logger.
             if bci_manager.is_streaming:
-                window_data = bci_manager.get_recent_data(bci_manager.sampling_rate * 2)
+                window_data = bci_manager.get_recent_data(bci_manager.sampling_rate * 5)
                 if window_data is not None and window_data.shape[1] > 0:
                     dashboard_payload = process_dashboard_data(
                         window_data, 
