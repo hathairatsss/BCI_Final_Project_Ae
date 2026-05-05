@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCI Cognitive Game</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="game-container">
+        <!-- Game Over Screen (Hidden by default) -->
+        <div id="game-over-screen" class="hidden">
+            <h1>GAME OVER</h1>
+            <p>FINAL SCORE: <span id="final-score-display">000000</span></p>
+        </div>
+
+        <div id="feedback-message" class="feedback-text"></div>
+        <div id="instructions" class="instructions-text">
+            <strong>สีส้ม:</strong> กดลูกศรตามทิศทางการ <u>เคลื่อนที่</u><br>
+            <strong>สีเขียว:</strong> กดลูกศรตามทิศทางที่ใบไม้ <u>ชี้ไป</u>
+        </div>
+        
+        <!-- Canvas will resize to fill space above HUD -->
+        <div id="focus-crosshair">+</div>
+        <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- Full-width Bottom HUD -->
+    <div id="game-hud">
+        <div class="hud-item status-box">
+            <span id="status-indicator" class="status-offline">DISCONNECTED</span>
+        </div>
+
+        <div class="hud-item focus-box">
+            <div class="hud-label">BCI FOCUS LEVEL</div>
+            <div class="focus-meter">
+                <div class="segment" id="seg-1"></div>
+                <div class="segment" id="seg-2"></div>
+                <div class="segment" id="seg-3"></div>
+                <div class="segment" id="seg-4"></div>
+                <div class="segment" id="seg-5"></div>
+            </div>
+        </div>
+
+        <div class="hud-item multiplier-box">
+            <div class="hud-label">MULTIPLIER</div>
+            <div id="multiplier-display" class="digital-text">1.0x</div>
+        </div>
+
+        <div class="hud-item timer-box">
+            <div class="hud-label">TIME REMAINING</div>
+            <div id="timer-display" class="digital-text alert-text">01:30</div>
+        </div>
+
+        <div class="hud-item score-box">
+            <div class="hud-label">SCORE</div>
+            <div id="score-text" class="digital-text">000000</div>
+        </div>
+    </div>
+
+    <script src="app.js?v=2"></script>
+</body>
+</html>
