@@ -13,6 +13,8 @@ class BCIManager:
         self.eeg_channels = []
         self.sampling_rate = 0
         self.is_streaming = False
+        self.local_buffer = None
+        self.buffer_size_seconds = 2
 
     def connect(self):
         BoardShim.enable_dev_board_logger()
@@ -43,11 +45,24 @@ class BCIManager:
         if self.is_streaming:
             return self.board.get_board_data()
         return None
+        
+    def append_to_local_buffer(self, new_data):
+        import numpy as np
+        if self.local_buffer is None:
+            self.local_buffer = new_data
+        else:
+            self.local_buffer = np.hstack((self.local_buffer, new_data))
+            max_samples = self.sampling_rate * self.buffer_size_seconds
+            if self.local_buffer.shape[1] > max_samples:
+                self.local_buffer = self.local_buffer[:, -max_samples:]
 
     def get_recent_data(self, num_samples):
-        """Returns the most recent 'num_samples' without clearing the buffer."""
-        if self.is_streaming:
-            return self.board.get_current_board_data(num_samples)
+        """Returns the most recent 'num_samples' from the LOCAL buffer."""
+        if self.local_buffer is not None:
+            if self.local_buffer.shape[1] >= num_samples:
+                return self.local_buffer[:, -num_samples:]
+            else:
+                return self.local_buffer
         return None
         
     def get_timestamp_channel(self):

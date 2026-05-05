@@ -1,4 +1,4 @@
-const DEV_MODE = true; // Set to false to connect to real WebSocket
+const DEV_MODE = false; // Set to false to connect to real WebSocket
 
 // --- DOM Elements ---
 const canvas = document.getElementById('game-canvas');
