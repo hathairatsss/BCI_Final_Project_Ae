@@ -77,7 +77,7 @@ if __name__ == "__main__":
     print("--- BrainFlow Connection Test (Cyton 8-Channel) ---")
     port = input("Enter the COM port for your Cyton board (e.g., COM3) [Press Enter for COM3]: ").strip()
     if not port:
-        port = "COM3"
+        port = "COM4"
         
     manager = BCIManager(board_id=BoardIds.CYTON_BOARD.value, serial_port=port)
     print(f"Testing connection to Cyton board on {port}...")

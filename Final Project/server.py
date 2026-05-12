@@ -23,7 +23,7 @@ app.add_middleware(
 STREAM_HZ = 10 # 10Hz to frontend
 
 # Global components
-bci_manager = BCIManager(board_id=BoardIds.CYTON_BOARD.value, serial_port='COM3')
+bci_manager = BCIManager(board_id=BoardIds.CYTON_BOARD.value, serial_port='COM4')
 csv_logger = CSVLogger()
 
 # Global variable for attention score to be logged
