@@ -72,11 +72,12 @@ def process_dashboard_data(data, eeg_channels, sampling_rate):
     if data.shape[1] < sampling_rate:
         return result
         
-    nfft = DataFilter.get_nearest_power_of_two(data.shape[1])
-    if nfft > data.shape[1]:
+    target_len = min(data.shape[1], sampling_rate * 5)
+    nfft = DataFilter.get_nearest_power_of_two(target_len)
+    if nfft > target_len:
         nfft = nfft // 2
         
-    if nfft < 16 or data.shape[1] < nfft:
+    if nfft < 16 or target_len < nfft:
         return result
 
     sum_metrics = {"beta_alpha": 0.0, "beta_theta_alpha": 0.0, "one_over_alpha": 0.0}
@@ -90,12 +91,15 @@ def process_dashboard_data(data, eeg_channels, sampling_rate):
         DataFilter.perform_bandstop(ch_data, sampling_rate, 48.0, 52.0, 2, FilterTypes.BUTTERWORTH.value, 0)
         DataFilter.perform_bandpass(ch_data, sampling_rate, 1.0, 45.0, 2, FilterTypes.BUTTERWORTH.value, 0)
         
-        # Take the latest 1250 points for raw visual (5 seconds) to match OpenBCI UI
-        result["raw_data"][ch_name] = np.round(ch_data[-1250:], 2).tolist()
+        # Trim data to the last 5 seconds to remove filter transient artifacts
+        ch_data_trimmed = ch_data[-(sampling_rate * 5):]
+        
+        # Take the latest points for raw visual (5 seconds) to match OpenBCI UI
+        result["raw_data"][ch_name] = np.round(ch_data_trimmed, 2).tolist()
         
         try:
-            psd = DataFilter.get_psd_welch(ch_data, nfft, nfft // 2, sampling_rate, 0)
-            ampls, freqs = psd[0], psd[1]
+            psd = DataFilter.get_psd_welch(ch_data_trimmed, nfft, nfft // 2, sampling_rate, 0)
+            ampls, freqs = np.sqrt(psd[0]), psd[1] # Convert Power to Amplitude (uV)
             
             # Mask psd to 0-40Hz for visualization
             freq_mask = (freqs >= 0) & (freqs <= 40)
@@ -113,8 +117,8 @@ def process_dashboard_data(data, eeg_channels, sampling_rate):
             beta_theta_alpha = beta / (theta + alpha) if (theta + alpha) > 0 else 0.0
             one_over_alpha = 1.0 / alpha if alpha > 0 else 0.0
             
-            # Calculate uVrms from the last 1 second (250 samples)
-            rms_val = float(np.sqrt(np.mean(ch_data[-250:]**2)))
+            # Calculate uVrms from the last 1 second
+            rms_val = float(np.sqrt(np.mean(ch_data_trimmed[-sampling_rate:]**2)))
             
             result["metrics"][ch_name] = {
                 "beta_alpha": float(np.round(beta_alpha, 3)),

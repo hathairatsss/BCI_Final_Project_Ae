@@ -68,6 +68,14 @@
     <h1>BCI Debug Dashboard</h1>
     <div id="connection-status" class="status">Connecting to WebSocket...</div>
 
+    <!-- Calibration Control -->
+    <div class="card full-width" style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center; justify-content: center; padding: 15px; background: #e8f4f8;">
+        <h3 style="margin: 0; color: #2c3e50;">Calibration Recording:</h3>
+        <input type="text" id="trial-label" placeholder="Enter Trial Label (e.g. relax_01)" style="padding: 8px; width: 250px; border: 1px solid #ccc; border-radius: 4px;">
+        <button id="record-btn" style="padding: 8px 20px; font-weight: bold; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">Start Recording</button>
+        <span id="recording-status" style="font-weight: bold; color: #7f8c8d; margin-left: 10px;">Status: Idle</span>
+    </div>
+
     <div class="grid-container">
         <!-- Raw Data Chart -->
         <div class="card">
@@ -125,6 +133,56 @@
         const statusEl = document.getElementById('connection-status');
         const tbody = document.querySelector('#metrics-table tbody');
 
+        // Calibration Control Logic
+        const recordBtn = document.getElementById('record-btn');
+        const trialLabel = document.getElementById('trial-label');
+        const recordingStatus = document.getElementById('recording-status');
+        let isRecording = false;
+
+        recordBtn.addEventListener('click', async () => {
+            if (!isRecording) {
+                // Start Recording
+                const label = trialLabel.value.trim() || 'unlabeled';
+                try {
+                    const res = await fetch('http://localhost:8000/api/calibration/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ label: label })
+                    });
+                    const result = await res.json();
+                    if (result.status === 'started') {
+                        isRecording = true;
+                        recordBtn.textContent = 'Stop Recording';
+                        recordBtn.style.background = '#7f8c8d'; // gray
+                        recordingStatus.textContent = `Status: Recording to ${result.file}`;
+                        recordingStatus.style.color = '#e74c3c'; // red
+                        trialLabel.disabled = true;
+                    }
+                } catch (e) {
+                    console.error("Failed to start recording", e);
+                    alert("Failed to start recording. Check console.");
+                }
+            } else {
+                // Stop Recording
+                try {
+                    const res = await fetch('http://localhost:8000/api/calibration/stop', {
+                        method: 'POST'
+                    });
+                    const result = await res.json();
+                    if (result.status === 'stopped') {
+                        isRecording = false;
+                        recordBtn.textContent = 'Start Recording';
+                        recordBtn.style.background = '#e74c3c'; // red
+                        recordingStatus.textContent = 'Status: Idle';
+                        recordingStatus.style.color = '#7f8c8d';
+                        trialLabel.disabled = false;
+                    }
+                } catch (e) {
+                    console.error("Failed to stop recording", e);
+                }
+            }
+        });
+
         // Initialize Plotly Charts
         let currentScale = 200;
         
@@ -151,7 +209,7 @@
         const fftLayout = {
             margin: { t: 30, b: 30, l: 40, r: 10 },
             xaxis: { title: 'Frequency (Hz)' },
-            yaxis: { title: 'Power', type: 'log' }, // Log scale for PSD is usually better
+            yaxis: { title: 'Amplitude (μV)', type: 'linear' }, // Linear scale for Amplitude
             showlegend: true,
             legend: { x: 1, y: 1 }
         };

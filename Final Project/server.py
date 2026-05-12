@@ -1,15 +1,40 @@
 import asyncio
 import json
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+from websockets.exceptions import ConnectionClosed
 
 from brainflow.board_shim import BoardIds
 from bci_manager import BCIManager
 from signal_processing import process_eeg_data, process_dashboard_data
-from csv_logger import CSVLogger
+from csv_logger import CSVLogger, CalibrationLogger
 
-app = FastAPI()
+# ----------------- CONFIGURATION -----------------
+STREAM_HZ = 10 # 10Hz to frontend
+
+# Global components
+bci_manager = BCIManager(board_id=BoardIds.CYTON_BOARD.value, serial_port='COM4')
+csv_logger = CSVLogger()
+calibration_logger = CalibrationLogger()
+
+# Global variable for attention score to be logged
+current_attention_score = 0.5
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if bci_manager.connect():
+        csv_logger.start(bci_manager.eeg_channels)
+        asyncio.create_task(bci_poll_loop())
+    else:
+        logging.error("Failed to initialize BCI Manager on startup.")
+    yield
+    bci_manager.disconnect()
+    csv_logger.stop()
+    calibration_logger.stop()
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,23 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ----------------- CONFIGURATION -----------------
-STREAM_HZ = 10 # 10Hz to frontend
 
-# Global components
-bci_manager = BCIManager(board_id=BoardIds.CYTON_BOARD.value, serial_port='COM4')
-csv_logger = CSVLogger()
-
-# Global variable for attention score to be logged
-current_attention_score = 0.5
-
-@app.on_event("startup")
-async def startup_event():
-    if bci_manager.connect():
-        csv_logger.start(bci_manager.eeg_channels)
-        asyncio.create_task(bci_poll_loop())
-    else:
-        logging.error("Failed to initialize BCI Manager on startup.")
 
 async def bci_poll_loop():
     global current_attention_score
@@ -54,10 +63,21 @@ async def bci_poll_loop():
                 bci_manager.append_to_local_buffer(new_data)
         await asyncio.sleep(0.05) # Poll at 20Hz
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    bci_manager.disconnect()
-    csv_logger.stop()
+
+
+@app.post("/api/calibration/start")
+async def start_calibration(request: Request):
+    data = await request.json()
+    label = data.get("label", "unlabeled")
+    success = calibration_logger.start(label, bci_manager.eeg_channels)
+    if success:
+        return {"status": "started", "file": calibration_logger.filename}
+    return {"status": "error"}
+
+@app.post("/api/calibration/stop")
+async def stop_calibration():
+    calibration_logger.stop()
+    return {"status": "stopped"}
 
 @app.websocket("/ws/attention")
 async def websocket_endpoint(websocket: WebSocket):
@@ -92,8 +112,10 @@ async def websocket_endpoint(websocket: WebSocket):
             # Wait for next tick (10Hz)
             await asyncio.sleep(1.0 / STREAM_HZ)
             
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, ConnectionClosed):
         logging.warning("Frontend disconnected.")
+    except RuntimeError as e:
+        logging.warning(f"Frontend connection dropped: {e}")
     except Exception as e:
         logging.error(f"WebSocket Error: {e}")
 
@@ -106,7 +128,7 @@ async def websocket_dashboard(websocket: WebSocket):
             # Use get_recent_data instead of get_all_data so we don't steal
             # data from the main game loop's CSV logger.
             if bci_manager.is_streaming:
-                window_data = bci_manager.get_recent_data(bci_manager.sampling_rate * 5)
+                window_data = bci_manager.get_recent_data(bci_manager.sampling_rate * 10)
                 if window_data is not None and window_data.shape[1] > 0:
                     dashboard_payload = process_dashboard_data(
                         window_data, 
@@ -114,14 +136,21 @@ async def websocket_dashboard(websocket: WebSocket):
                         bci_manager.sampling_rate
                     )
                     await websocket.send_text(json.dumps(dashboard_payload))
+                    
+                    if calibration_logger.is_recording:
+                        ts_channel = bci_manager.get_timestamp_channel()
+                        timestamp = window_data[ts_channel, -1] if window_data.shape[0] > ts_channel else 0
+                        calibration_logger.log_metrics(timestamp, dashboard_payload)
                 
             await asyncio.sleep(1.0 / 10) # 10Hz refresh rate
             
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, ConnectionClosed):
         logging.warning("Dashboard disconnected.")
+    except RuntimeError as e:
+        logging.warning(f"Dashboard connection dropped: {e}")
     except Exception as e:
         logging.error(f"Dashboard WebSocket Error: {e}")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, ws="wsproto")
