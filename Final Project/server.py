@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from brainflow.board_shim import BoardIds
 from bci_manager import BCIManager
 from signal_processing import process_eeg_data, process_dashboard_data
-from csv_logger import CSVLogger
+from csv_logger import CSVLogger, CalibrationLogger
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -25,9 +26,33 @@ STREAM_HZ = 10 # 10Hz to frontend
 # Global components
 bci_manager = BCIManager(board_id=BoardIds.CYTON_BOARD.value, serial_port='COM4')
 csv_logger = CSVLogger()
+calibration_logger = CalibrationLogger()
 
 # Global variable for attention score to be logged
 current_attention_score = 0.5
+
+# Recording State
+recording_state = {"is_recording": False, "label": "unlabeled"}
+
+class CalibrationRequest(BaseModel):
+    label: str
+
+@app.post("/start_calibration")
+async def start_calibration(req: CalibrationRequest):
+    global recording_state
+    recording_state["is_recording"] = True
+    recording_state["label"] = req.label
+    calibration_logger.start(bci_manager.eeg_channels)
+    logging.warning(f"Recording started with label: {req.label}")
+    return {"status": "success", "label": req.label}
+
+@app.post("/stop_calibration")
+async def stop_calibration():
+    global recording_state
+    recording_state["is_recording"] = False
+    calibration_logger.stop()
+    logging.warning("Recording stopped.")
+    return {"status": "success"}
 
 @app.on_event("startup")
 async def startup_event():
@@ -106,13 +131,17 @@ async def websocket_dashboard(websocket: WebSocket):
             # Use get_recent_data instead of get_all_data so we don't steal
             # data from the main game loop's CSV logger.
             if bci_manager.is_streaming:
-                window_data = bci_manager.get_recent_data(bci_manager.sampling_rate * 5)
+                window_data = bci_manager.get_recent_data(bci_manager.sampling_rate * 10)
                 if window_data is not None and window_data.shape[1] > 0:
                     dashboard_payload = process_dashboard_data(
                         window_data, 
                         bci_manager.eeg_channels, 
                         bci_manager.sampling_rate
                     )
+                    
+                    if recording_state["is_recording"]:
+                        calibration_logger.log_calibration_row(recording_state["label"], dashboard_payload)
+                        
                     await websocket.send_text(json.dumps(dashboard_payload))
                 
             await asyncio.sleep(1.0 / 10) # 10Hz refresh rate

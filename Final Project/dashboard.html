@@ -61,12 +61,42 @@
             font-weight: bold;
             background-color: #e8f4f8 !important;
         }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+        .recording-active {
+            background-color: #c0392b !important;
+        }
     </style>
 </head>
 <body>
 
     <h1>BCI Debug Dashboard</h1>
     <div id="connection-status" class="status">Connecting to WebSocket...</div>
+
+    <!-- Calibration / Data Collection Controls -->
+    <div id="calibration-controls" class="card" style="margin-bottom: 20px; max-width: 800px; margin-left: auto; margin-right: auto;">
+        <h3 style="margin-top:0; color:#2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px;">Data Collection / Calibration</h3>
+        <div style="display: flex; gap: 20px; align-items: center; padding: 10px 0;">
+            <div style="flex: 1;">
+                <label for="trial-label" style="font-weight: bold; display: block; margin-bottom: 8px; color: #7f8c8d;">Trial Label / Task Name:</label>
+                <input type="text" id="trial-label" placeholder="e.g., Focus_Round_1" 
+                    style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #bdc3c7; font-size: 14px;">
+            </div>
+            <div style="padding-top: 20px;">
+                <button id="record-btn" onclick="toggleRecording()" 
+                    style="padding: 12px 30px; border-radius: 6px; border: none; background-color: #27ae60; color: white; font-weight: bold; cursor: pointer; font-size: 14px; transition: background 0.3s;">
+                    Start Recording
+                </button>
+            </div>
+            <div id="recording-indicator" style="display: none; align-items: center; gap: 10px; padding-top: 25px;">
+                <div style="width: 14px; height: 14px; background-color: #e74c3c; border-radius: 50%; animation: pulse 1s infinite;"></div>
+                <span style="font-weight: bold; color: #e74c3c; letter-spacing: 1px;">LOGGING DATA...</span>
+            </div>
+        </div>
+    </div>
 
     <div class="grid-container">
         <!-- Raw Data Chart -->
@@ -151,7 +181,7 @@
         const fftLayout = {
             margin: { t: 30, b: 30, l: 40, r: 10 },
             xaxis: { title: 'Frequency (Hz)' },
-            yaxis: { title: 'Power', type: 'log' }, // Log scale for PSD is usually better
+            yaxis: { title: 'Amplitude (μV)', type: 'linear' }, // Displaying Amplitude instead of Power
             showlegend: true,
             legend: { x: 1, y: 1 }
         };
@@ -165,6 +195,54 @@
         Plotly.newPlot('raw-chart', [], rawLayout, {responsive: true});
         Plotly.newPlot('fft-chart', [], fftLayout, {responsive: true});
         Plotly.newPlot('metrics-chart', [], metricsLayout, {responsive: true});
+
+        let isRecording = false;
+
+        async function toggleRecording() {
+            const btn = document.getElementById('record-btn');
+            const labelInput = document.getElementById('trial-label');
+            const indicator = document.getElementById('recording-indicator');
+            const label = labelInput.value.trim() || "unlabeled";
+
+            if (!isRecording) {
+                // Start Recording
+                try {
+                    const response = await fetch('http://localhost:8000/start_calibration', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ label: label })
+                    });
+                    if (response.ok) {
+                        isRecording = true;
+                        btn.textContent = "Stop Recording";
+                        btn.classList.add('recording-active');
+                        labelInput.disabled = true;
+                        indicator.style.display = 'flex';
+                        console.log("Recording session started:", label);
+                    }
+                } catch (err) {
+                    alert("Failed to start recording. Is the server running?");
+                    console.error(err);
+                }
+            } else {
+                // Stop Recording
+                try {
+                    const response = await fetch('http://localhost:8000/stop_calibration', {
+                        method: 'POST'
+                    });
+                    if (response.ok) {
+                        isRecording = false;
+                        btn.textContent = "Start Recording";
+                        btn.classList.remove('recording-active');
+                        labelInput.disabled = false;
+                        indicator.style.display = 'none';
+                        console.log("Recording session stopped.");
+                    }
+                } catch (err) {
+                    console.error("Failed to stop recording:", err);
+                }
+            }
+        }
 
         function connectWebSocket() {
             ws = new WebSocket(wsUrl);
