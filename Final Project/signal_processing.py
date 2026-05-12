@@ -44,8 +44,8 @@ def process_eeg_data(data, eeg_channels, sampling_rate):
         ratio = beta_power / denominator
         
         # Normalize to 0-1 range for the frontend (heuristic mapping)
-        map_bound = (0.1, 2.0)
-        attention_score = (ratio - map_bound[0]) / (map_bound[1] - map_bound[0])
+        # We'll map [0.5, 2.5] -> [0, 1]
+        attention_score = (ratio - 0.1) / 0.5
         return max(0.0, min(1.0, attention_score)), alpha_power, beta_power
         
     except Exception as e:
@@ -72,12 +72,11 @@ def process_dashboard_data(data, eeg_channels, sampling_rate):
     if data.shape[1] < sampling_rate:
         return result
         
-    trim_len = min(sampling_rate * 5, data.shape[1])
-    nfft = DataFilter.get_nearest_power_of_two(trim_len)
-    if nfft > trim_len:
+    nfft = DataFilter.get_nearest_power_of_two(data.shape[1])
+    if nfft > data.shape[1]:
         nfft = nfft // 2
         
-    if nfft < 16 or trim_len < nfft:
+    if nfft < 16 or data.shape[1] < nfft:
         return result
 
     sum_metrics = {"beta_alpha": 0.0, "beta_theta_alpha": 0.0, "one_over_alpha": 0.0}
@@ -90,9 +89,6 @@ def process_dashboard_data(data, eeg_channels, sampling_rate):
         # Filters
         DataFilter.perform_bandstop(ch_data, sampling_rate, 48.0, 52.0, 2, FilterTypes.BUTTERWORTH.value, 0)
         DataFilter.perform_bandpass(ch_data, sampling_rate, 1.0, 45.0, 2, FilterTypes.BUTTERWORTH.value, 0)
-        
-        # Trim to remove the transient filter response
-        ch_data = ch_data[-trim_len:]
         
         # Take the latest 1250 points for raw visual (5 seconds) to match OpenBCI UI
         result["raw_data"][ch_name] = np.round(ch_data[-1250:], 2).tolist()
@@ -107,14 +103,11 @@ def process_dashboard_data(data, eeg_channels, sampling_rate):
             if len(result["fft_data"]["frequencies"]) == 0:
                 result["fft_data"]["frequencies"] = np.round(freqs[freq_mask], 2).tolist()
             
-            # Convert power to amplitude for display
-            ampl_vals = np.sqrt(ampls[freq_mask])
-            result["fft_data"]["psd"][ch_name] = np.round(ampl_vals, 4).tolist()
+            result["fft_data"]["psd"][ch_name] = np.round(ampls[freq_mask], 4).tolist()
             
             theta = DataFilter.get_band_power(psd, 4.0, 8.0)
             alpha = DataFilter.get_band_power(psd, 8.0, 12.0)
             beta = DataFilter.get_band_power(psd, 13.0, 30.0)
-            gamma = DataFilter.get_band_power(psd, 30.0, 45.0)
             
             beta_alpha = beta / alpha if alpha > 0 else 0.0
             beta_theta_alpha = beta / (theta + alpha) if (theta + alpha) > 0 else 0.0
@@ -124,10 +117,6 @@ def process_dashboard_data(data, eeg_channels, sampling_rate):
             rms_val = float(np.sqrt(np.mean(ch_data[-250:]**2)))
             
             result["metrics"][ch_name] = {
-                "theta": float(np.round(theta, 3)),
-                "alpha": float(np.round(alpha, 3)),
-                "beta": float(np.round(beta, 3)),
-                "gamma": float(np.round(gamma, 3)),
                 "beta_alpha": float(np.round(beta_alpha, 3)),
                 "beta_theta_alpha": float(np.round(beta_theta_alpha, 3)),
                 "one_over_alpha": float(np.round(one_over_alpha, 3)),

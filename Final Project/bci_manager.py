@@ -14,7 +14,7 @@ class BCIManager:
         self.sampling_rate = 0
         self.is_streaming = False
         self.local_buffer = None
-        self.buffer_size_seconds = 10
+        self.buffer_size_seconds = 5
 
     def connect(self):
         BoardShim.enable_dev_board_logger()
