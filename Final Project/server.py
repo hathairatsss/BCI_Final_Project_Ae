@@ -66,9 +66,12 @@ async def bci_poll_loop():
     global current_attention_score
     while True:
         if bci_manager.is_streaming:
-            new_data = bci_manager.get_all_data()
+            new_data = bci_manager.get_all_data() # ดึงข้อมูลออกจาก Board Buffer
             if new_data is not None and new_data.shape[1] > 0:
-                # Write to CSV immediately with the latest known attention score
+                # 1. บันทึกเข้า Buffer ส่วนกลางของ Class ก่อน
+                bci_manager.append_to_local_buffer(new_data)
+                
+                # 2. บันทึก CSV จากข้อมูลชุดเดิม
                 csv_logger.log_data(
                     new_data, 
                     new_data.shape[1], 
@@ -76,9 +79,8 @@ async def bci_poll_loop():
                     bci_manager.eeg_channels, 
                     current_attention_score
                 )
-                bci_manager.append_to_local_buffer(new_data)
-        await asyncio.sleep(0.05) # Poll at 20Hz
-
+        await asyncio.sleep(0.02) # ปรับให้เร็วขึ้น (50Hz) เพื่อลด Latency
+        
 @app.on_event("shutdown")
 async def shutdown_event():
     bci_manager.disconnect()
