@@ -10,9 +10,8 @@ def process_eeg_data(data, eeg_channels, sampling_rate):
     if data.shape[1] < sampling_rate: 
         return 0.5, 0.0, 0.0 # Default score if not enough data yet
         
-    # We will process channel 1 (eeg_channels[0]) for the attention score as an example
-    ch = eeg_channels[0]
-    ch_data = data[ch, :]
+    # Average across all EEG channels to reduce noise (Averaging before PSD)
+    ch_data = np.mean(data[eeg_channels, :], axis=0)
     
     # 1. 50Hz/60Hz Notch filter (Assuming 50Hz for Thailand)
     DataFilter.perform_bandstop(ch_data, sampling_rate, 48.0, 52.0, 2, FilterTypes.BUTTERWORTH.value, 0)
@@ -33,20 +32,20 @@ def process_eeg_data(data, eeg_channels, sampling_rate):
     try:
         psd = DataFilter.get_psd_welch(ch_data, nfft, nfft // 2, sampling_rate, 0)
         
-        # Alpha (8-12Hz)
+        theta_power = DataFilter.get_band_power(psd, 4.0, 8.0) # Theta (4-8Hz)
         alpha_power = DataFilter.get_band_power(psd, 8.0, 12.0)
-        # Beta (13-30Hz)
         beta_power = DataFilter.get_band_power(psd, 13.0, 30.0)
         
-        # Calculate ratio
-        if alpha_power == 0:
+        # ปรับสูตรการคำนวณ Ratio
+        denominator = theta_power + alpha_power
+        if denominator == 0:
             return 0.5, alpha_power, beta_power
             
-        ratio = beta_power / alpha_power
+        ratio = beta_power / denominator
         
         # Normalize to 0-1 range for the frontend (heuristic mapping)
         # We'll map [0.5, 2.5] -> [0, 1]
-        attention_score = (ratio - 0.5) / 2.0
+        attention_score = (ratio - 0.1) / 0.5
         return max(0.0, min(1.0, attention_score)), alpha_power, beta_power
         
     except Exception as e:
@@ -110,8 +109,8 @@ def process_dashboard_data(data, eeg_channels, sampling_rate):
             alpha = DataFilter.get_band_power(psd, 8.0, 12.0)
             beta = DataFilter.get_band_power(psd, 13.0, 30.0)
             
-            beta_alpha = beta / alpha if alpha > 0 else 0
-            beta_theta_alpha = beta / (theta + alpha) if (theta + alpha) > 0 else 0
+            beta_alpha = beta / alpha if alpha > 0 else 0.0
+            beta_theta_alpha = beta / (theta + alpha) if (theta + alpha) > 0 else 0.0
             one_over_alpha = 1.0 / alpha if alpha > 0 else 0.0
             
             # Calculate uVrms from the last 1 second (250 samples)

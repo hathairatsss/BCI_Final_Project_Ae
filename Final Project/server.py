@@ -115,7 +115,7 @@ async def websocket_dashboard(websocket: WebSocket):
                     )
                     await websocket.send_text(json.dumps(dashboard_payload))
                 
-            await asyncio.sleep(1.0 / 4) # 4Hz refresh rate
+            await asyncio.sleep(1.0 / 10) # 10Hz refresh rate
             
     except WebSocketDisconnect:
         logging.warning("Dashboard disconnected.")

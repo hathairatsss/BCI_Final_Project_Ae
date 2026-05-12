@@ -249,7 +249,7 @@ function startNewRound() {
     };
 
     leaves = [];
-    
+
     // จำนวนใบไม้ 15-20 ใบ
     const numLeaves = Math.floor(Math.random() * 6) + 15;
 
@@ -313,35 +313,37 @@ window.addEventListener('keydown', (e) => {
 function updateHUD() {
     if (isGameOver) return;
 
-    // Lerp smoothing
+    // 1. Lerp smoothing (คงไว้เพื่อให้แถบบาร์ขยับนุ่มนวลตามสัญญาณที่บันทึกใน Log)
     currentFocus = lerp(currentFocus, Math.max(0, Math.min(1, targetFocus)), 0.05);
 
-    // Update Multiplier (1x to 4x mapping)
+    // 2. Update Multiplier (คงเดิมตามสูตรคำนวณคะแนน)
     currentMultiplier = 1 + (currentFocus * 3);
 
-    // Update Focus Meter (Level 1-5 mapping)
-    // Map 0.0-1.0 to 1-5
+    // 3. ปรับระดับ Focus Level 1-5 ตามค่า Engagement Index (EI)
+    // โดยอ้างอิงจากความถี่ Beta / (Theta + Alpha) ที่ประมวลผลมา
     let level = 1;
-    if (currentFocus >= 0.8) level = 5;
-    else if (currentFocus >= 0.6) level = 4;
-    else if (currentFocus >= 0.4) level = 3;
-    else if (currentFocus >= 0.2) level = 2;
+    if (currentFocus >= 0.8) level = 5;      // สภาวะ Deep Focus (จุดสูงสุด)
+    else if (currentFocus >= 0.6) level = 4; // สภาวะ High Engagement 
+    else if (currentFocus >= 0.4) level = 3; // สภาวะ Normal / Active
+    else if (currentFocus >= 0.2) level = 2; // สภาวะ Low Focus
+    else level = 1;                          // สภาวะ Inattentive (ระดับเริ่มต้น)
 
-    // Reset all segments
+    // 4. แสดงผลแถบบาร์ (Segments) ตามระดับที่คำนวณได้
     segments.forEach((seg) => {
         seg.className = 'segment';
     });
 
-    // Fill segments up to current level
     for (let i = 0; i < level; i++) {
-        segments[i].classList.add(`active-${i + 1}`);
+        if (segments[i]) {
+            segments[i].classList.add(`active-${i + 1}`);
+        }
     }
 
+    // 5. แสดงค่า Multiplier และปรับแต่ง Dynamic Styling
     multiplierDisplay.textContent = currentMultiplier.toFixed(1) + "x";
 
-    // Dynamic styling based on focus
     if (level === 5) {
-        multiplierDisplay.style.color = '#00e676';
+        multiplierDisplay.style.color = '#00e676'; // สีเขียวเมื่อถึงจุด Focus สูงสุด
         multiplierDisplay.style.transform = 'scale(1.1)';
     } else {
         multiplierDisplay.style.color = '#333333';
